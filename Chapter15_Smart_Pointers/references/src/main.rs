@@ -14,6 +14,24 @@ impl<T> MyBox<T> {
     }
 }
 
+use std::ops::Deref;
+
+/// Implementation of Trait Deref for MyBox
+/// 
+/// Requires an implementation of 'deref'
+/// 
+impl<T> Deref for MyBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+fn hello(message: &str) {
+    print!("{}", message)
+}
+
 fn main() {
     // x contains the i32 value 5
     let x = 5;
@@ -22,14 +40,20 @@ fn main() {
     let y = MyBox::new(x);
 
     assert_eq!(5, x);
-    // assert_eq!(5, *y); - Error here cannot use dereference operator need to implement Deref
+    assert_eq!(5, *y); // This line will only work if Deref is implemented for MyBox
 
-    
+    // Lets showcase Deref coercion
+    let message = MyBox::new(String::from("Hello"));
+
+    // Despite hello taking a reference to string slice it will accept our Box of String due to Deref coersion
+    hello(&message);
+
+    // If Rust did not implement Deref coersion the following code would be needed:
+    // hello(&(*m)[..]);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[test]
     fn test_reference() {
         // x contains the i32 value 5
