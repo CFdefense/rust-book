@@ -255,3 +255,47 @@ mod tests {
 ```
 
 #### Allowing Multiple Owners of Mutable Data
+Another common way to use `RefCell<T>` is in combination with `Rc<T>`.
+
+Recall that `Rc<T>` lets you have multiple owners of some data, but it only gives immutable access to that data.
+
+If you have an `Rc<T>` that holds a `RefCell<T>`, you can get a value that can have multiple owners and that you can mutate!
+
+Recall the cons list example from before where we used `Rc<T>` to allow multiple lists to share ownership of another list. `Rc<T>` holds only immutable values, we can’t change any of the values in the list once we’ve created them, so let’s add in `RefCell<T>` for its ability to change the values in the lists.
+
+```rs
+#[derive(Debug)]
+enum List {
+    Cons(Rc<RefCell<i32>>, Rc<List>),
+    Nil,
+}
+
+use crate::List::{Cons, Nil};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+fn main() {
+    let value = Rc::new(RefCell::new(5));
+
+    let a = Rc::new(Cons(Rc::clone(&value), Rc::new(Nil)));
+
+    let b = Cons(Rc::new(RefCell::new(3)), Rc::clone(&a));
+    let c = Cons(Rc::new(RefCell::new(4)), Rc::clone(&a));
+
+    *value.borrow_mut() += 10;
+
+    println!("a after = {a:?}");
+    println!("b after = {b:?}");
+    println!("c after = {c:?}");
+}
+```
+
+We create a value that is an instance of `Rc<RefCell<i32>>` and store it in a variable named value so that we can access it directly later. 
+
+Then, we create a `List` in **a** with a `Cons` variant that holds value. We need to clone value so that both **a** and **value** have ownership of the inner **5** value rather than transferring ownership from value to a or having a borrow from value.
+
+After we’ve created the lists in **a**, **b**, and **c**, we want to add **10** to the value in value, which we can do by getting a reference to the smart pointer with `borrow_mut()` and dereference it to get the mutable value.
+
+This technique is pretty neat! By using `RefCell<T>`, we have an outwardly immutable List value. But we can use the methods on `RefCell<T>` that provide access to its interior mutability so that we can modify our data when we need to
+
+Note that `RefCell<T>`does not work for multithreaded code! `Mutex<T>` is the thread-safe version of `RefCell<T>`.

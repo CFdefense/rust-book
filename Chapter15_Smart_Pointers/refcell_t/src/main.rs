@@ -37,8 +37,6 @@ where
     }
 }
 
-fn main() {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,4 +68,33 @@ mod tests {
 
         assert_eq!(mock_messenger.sent_messages.borrow().len(), 1);
     }
+}
+
+#[derive(Debug)]
+enum List {
+    Cons(Rc<RefCell<i32>>, Rc<List>),
+    Nil,
+}
+
+use crate::List::{Cons, Nil};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+fn main() {
+    // We create a value that is an instance of Rc<RefCell<i32>> and store it in a variable named value so that we can access it directly later. 
+    let value = Rc::new(RefCell::new(5));
+
+    // Then, we create a List in a with a Cons variant that holds value
+    let a = Rc::new(Cons(Rc::clone(&value), Rc::new(Nil)));
+
+    // And then we can share a to b and c
+    let b = Cons(Rc::new(RefCell::new(3)), Rc::clone(&a));
+    let c = Cons(Rc::new(RefCell::new(4)), Rc::clone(&a));
+
+    // And then we can still change the inside value with RefCell interior mutability
+    *value.borrow_mut() += 10;
+
+    println!("a after = {a:?}");
+    println!("b after = {b:?}");
+    println!("c after = {c:?}");
 }
