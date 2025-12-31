@@ -84,4 +84,162 @@ When we run `cargo doc --open`, these comments will display on the front page of
 
 The structure of your public API is a major consideration when publishing a crate. People who use your crate are less familiar with the structure than you are and might have difficulty finding the pieces they want to use if your crate has a large module hierarchy.
 
--- continue here
+Users might also be annoyed at having to enter use `my_crate::some_module::another_module::UsefulType;` rather than use `my_crate::UsefulType;`.
+
+The good news is that if the structure isn’t convenient for others to use from another library, you don’t have to rearrange your internal organization: Instead, you can re-export items to make a public structure that’s different from your private structure by using `pub use`.
+
+Say we had an art library containing a module for **kinds** and another for **utils**
+
+```rs
+//! # Art
+//!
+//! A library for modeling artistic concepts.
+
+pub mod kinds {
+    /// The primary colors according to the RYB color model.
+    pub enum PrimaryColor {
+        Red,
+        Yellow,
+        Blue,
+    }
+
+    /// The secondary colors according to the RYB color model.
+    pub enum SecondaryColor {
+        Orange,
+        Green,
+        Purple,
+    }
+}
+
+pub mod utils {
+    use crate::kinds::*;
+
+    /// Combines two primary colors in equal amounts to create
+    /// a secondary color.
+    pub fn mix(c1: PrimaryColor, c2: PrimaryColor) -> SecondaryColor {
+        // --snip--
+        unimplemented!();
+    }
+}
+```
+
+If we generated our docs we would notice that the `PrimaryColor` and `SecondaryColor` types aren’t listed on the front page, nor is the `mix` function. We have to click `kinds` and `utils` to see them.
+
+Another crate would need to import them using the following:
+
+```rs
+use art::kinds::PrimaryColor;
+use art::utils::mix;
+
+fn main() {
+    let red = PrimaryColor::Red;
+    let yellow = PrimaryColor::Yellow;
+    mix(red, yellow);
+}
+```
+
+They would need to figure out that `PrimaryColor` is in the `kinds` module and `mix` is in the `utils` module. 
+
+To remove the internal organization from the public API, we can modify the art crate code using `pub use`:
+
+```rs
+//! # Art
+//!
+//! A library for modeling artistic concepts.
+
+pub use self::kinds::PrimaryColor;
+pub use self::kinds::SecondaryColor;
+pub use self::utils::mix;
+
+pub mod kinds {
+    // --snip--
+    /// The primary colors according to the RYB color model.
+    pub enum PrimaryColor {
+        Red,
+        Yellow,
+        Blue,
+    }
+
+    /// The secondary colors according to the RYB color model.
+    pub enum SecondaryColor {
+        Orange,
+        Green,
+        Purple,
+    }
+}
+
+pub mod utils {
+    // --snip--
+    use crate::kinds::*;
+
+    /// Combines two primary colors in equal amounts to create
+    /// a secondary color.
+    pub fn mix(c1: PrimaryColor, c2: PrimaryColor) -> SecondaryColor {
+        SecondaryColor::Orange
+    }
+}
+```
+
+The API documentation that cargo doc generates for this crate will now list and link re-exports on the front page.
+
+The crate users can still see internal library structure but can now convienantly use our structures:
+
+```rs
+use art::PrimaryColor;
+use art::mix;
+
+fn main() {
+    // --snip--
+    let red = PrimaryColor::Red;
+    let yellow = PrimaryColor::Yellow;
+    mix(red, yellow);
+}
+```
+
+In cases where there are many nested modules, re-exporting the types at the top level with pub use can make a significant difference in the experience of people who use the crate. 
+
+
+#### Setting Up a Crates.io Account
+
+Before you can publish any crates, you need to create an account on `crates.io` and get an API key.
+
+Then, run the cargo login command and paste your API key when prompted, like this:
+
+```sh
+$ cargo login
+abcdefghijklmnopqrstuvwxyz012345
+```
+
+Define your crate name in `Cargo.toml`, must be unique:
+```rs
+[package]
+name = "guessing_game"
+```
+
+You must also include other fields like **Metadata** and **License**
+```rs
+[package]
+name = "guessing_game"
+version = "0.1.0"
+edition = "2024"
+description = "A fun game where you guess what number the computer has chosen."
+license = "MIT OR Apache-2.0"
+```
+
+#### Publishing to Crates.io
+
+Now that you’ve created an account, saved your API token, chosen a name for your crate, and specified the required metadata, you’re ready to publish!
+
+Be careful, because a publish is permanent. The version can never be overwritten, and the code cannot be deleted except in certain circumstances.
+
+To publish: run the `cargo publish` command
+
+#### Publishing a New Version of an Existing Crate
+
+When you’ve made changes to your crate and are ready to release a new version, you change the version value specified in your Cargo.toml file and republish. 
+
+Use the **Semantic Versioning** rules to decide what an appropriate next version number is, based on the kinds of changes you’ve made. 
+
+Then, run `cargo publish` to upload the new version.
+
+#### Deprecating Versions from Crates.io
