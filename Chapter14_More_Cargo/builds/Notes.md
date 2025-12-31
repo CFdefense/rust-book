@@ -1,6 +1,4 @@
-## Chapter 14 – More About Cargo and Crates.io
-
-### Customizing Builds with Release Profiles
+## Chapter 14 – More About Cargo and Crates.io: Customizing Builds with Release Profiles
 
 In Rust, release profiles are predefined, customizable profiles with different configurations that allow a programmer to have more control over various options for compiling code. Each profile is configured independently of the others.
 

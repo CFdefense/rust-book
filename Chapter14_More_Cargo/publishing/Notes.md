@@ -1,6 +1,4 @@
-## Chapter 14 – More About Cargo and Crates.io
-
-### Publishing a Crate to Crates.io
+## Chapter 14 – More About Cargo and Crates.io: Publishing a Crate to Crates.io
 
 We’ve used packages from crates.io as dependencies of our project, but you can also share your code with other people by publishing your own packages.
 
@@ -243,3 +241,23 @@ Use the **Semantic Versioning** rules to decide what an appropriate next version
 Then, run `cargo publish` to upload the new version.
 
 #### Deprecating Versions from Crates.io
+
+Although you can’t remove previous versions of a crate, you can prevent any future projects from adding them as a new dependency. 
+
+To yank a version of a crate, in the directory of the crate that you’ve previously published, run `cargo yank` and specify which **version** you want to yank.
+
+Example:
+
+```sh
+$ cargo yank --vers 1.0.1
+    Updating crates.io index
+        Yank guessing_game@1.0.1
+```
+
+Can also be undone:
+
+```sh
+$ cargo yank --vers 1.0.1 --undo
+    Updating crates.io index
+      Unyank guessing_game@1.0.1
+```
