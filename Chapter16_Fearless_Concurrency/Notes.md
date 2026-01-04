@@ -2,7 +2,8 @@
 
 These notes have been distributed to:
 
-- `box_t/Notes.md`
+- `threads/Notes.md`
+- `channels/Notes.md`
 
 Use this file as a quick index to the subchapter notes.
 
