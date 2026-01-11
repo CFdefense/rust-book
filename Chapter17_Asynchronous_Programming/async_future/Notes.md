@@ -169,22 +169,17 @@ Now lets call `page_title` with two different URLs passed in from the command li
 use trpl::{Either, Html};
 
 fn main() {
-    // collect cli arguments
     let args: Vec<String> = std::env::args().collect();
 
-    // use block_on to initalize a runtime
     trpl::block_on(async {
-        // call page title for each url
         let title_fut_1 = async { (&args[1], page_title(&args[1]).await) };
         let title_fut_2 = async { (&args[2], page_title(&args[2]).await) };
 
-        // match the results of select
         let (url, maybe_title) = match trpl::select(title_fut_1, title_fut_2).await {
             Either::Left(left) => left,
             Either::Right(right) => right,
         };
 
-        // print who finished first
         println!("{url} returned first");
         match maybe_title {
             Some(title) => println!("Its page title was: '{title}'"),
@@ -193,3 +188,10 @@ fn main() {
     })
 }
 ```
+
+Either future can legitimately “win,” so it doesn’t make sense to return a `Result`. 
+
+Instead, `trpl::select` returns a type we haven’t seen before, `trpl::Either`.
+
+The `select` function returns `Left` with that future’s output if the first argument wins, and `Right` with the second future argument’s output if that one wins. 
+
