@@ -20,7 +20,7 @@ For example, we can:
 2. Set timeouts on sequences of long-running operations
 3. Throttle user interface events to avoid doing needless work.
 
-##### Iterators vs Async Recv
+### Iterators vs Async Recv
 
 We saw a **sequence of numbers** previously with iterators. However, async recievers differ.
 
@@ -82,7 +82,9 @@ help: there is a method `try_next` with a similar name
 
 As this output explains, the reason for the compiler error is that we need the right `trait` in scope to be able to use the `next` method.
 
-The `trait` in question is `StreamExt` not `Stream`.
+### Stream and StreamExt
+
+The `trait` in question to be included is `StreamExt` not `Stream`.
 
 The `Stream trait` defines a low-level interface that effectively combines the `Iterator` and `Future` traits. 
 

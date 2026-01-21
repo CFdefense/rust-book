@@ -302,3 +302,6 @@ Then, later, we `move` the original `tx` into a new async block, where we send m
 Both of the `async blocks` for sending messages need to be `async move blocks` so that both `tx` and `tx1` get **dropped** when those blocks finish.
 
 Otherwise, we’ll end up back in the same infinite loop we started out in.
+
+Finally, we switch from `trpl::join` to `trpl::join!` to handle the additional future: the `join!` macro awaits an arbitrary number of futures where we know the number of futures at compile time.
+
