@@ -1,5 +1,5 @@
 {
   "rust-analyzer.linkedProjects": [
-    "Chapter17_Asynchronous_Programming/async_future/Cargo.toml"
+    "17_async/async_traits/Cargo.toml"
   ]
 }
