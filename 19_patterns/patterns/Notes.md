@@ -1,4 +1,4 @@
-## Chapter 18 - OPatterns and Matching: All the Places Patterns Can Be Used
+## Chapter 19 - Patterns and Matching: All the Places Patterns Can Be Used
 
 ### Overview
 
