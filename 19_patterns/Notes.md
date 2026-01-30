@@ -1,10 +1,8 @@
-## Chapter 18 - Object-Oriented Programming Features
+## Chapter 19 - Patterns and Matching
 
 These notes have been distributed to:
 
-- `characteristics/Notes.md`
-- `trait_objects/Notes.md`
-- `oop_design/Notes.md`
+- ``
 
 Use this file as a quick index to the subchapter notes.
 
