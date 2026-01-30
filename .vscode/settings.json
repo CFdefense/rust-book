@@ -1,5 +1,6 @@
 {
+  /* Change according to cargo directory for linting */
   "rust-analyzer.linkedProjects": [
-    "17_async/async_traits/Cargo.toml"
+    "18_oop/oop_design/Cargo.toml"
   ]
 }
