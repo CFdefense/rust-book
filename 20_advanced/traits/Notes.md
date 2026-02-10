@@ -180,5 +180,121 @@ The first purpose is similar to the second but in **reverse**:
 
 If you want to add a type parameter to an existing trait, you can give it a default to allow extension of the functionality of the trait without breaking the existing implementation code.
 
-
 ### Disambiguating Between Identically Named Methods
+
+Nothing in Rust prevents a trait from having a method with the **same name** as another trait’s method, nor does Rust prevent you from implementing both traits on one type. 
+
+It’s also possible to implement a method directly on the type with the **same name** as methods from traits.
+
+When calling methods with the same name, you’ll need to tell Rust *which one* you want to use.
+
+Consider the following code where we have `Pilot` and `Wizard`, that both have a method called `fly`.
+
+We then implement both traits on a type `Human` that already has a method named `fly` implemented on it.
+
+Each `fly` method does something different.
+
+```rs
+trait Pilot {
+    fn fly(&self);
+}
+
+trait Wizard {
+    fn fly(&self);
+}
+
+struct Human;
+
+impl Pilot for Human {
+    fn fly(&self) {
+        println!("This is your captain speaking.");
+    }
+}
+
+impl Wizard for Human {
+    fn fly(&self) {
+        println!("Up!");
+    }
+}
+
+impl Human {
+    fn fly(&self) {
+        println!("*waving arms furiously*");
+    }
+}
+```
+
+When we call `fly` on an instance of `Human`, the compiler **defaults** to calling the method that is directly implemented on the type:
+
+```rs
+fn main() {
+    let person = Human;
+    person.fly();
+}
+```
+
+Running this code will print *waving arms furiously*, showing that Rust called the `fly` method implemented on `Human` directly.
+
+To call the `fly` methods from either the `Pilot` trait or the `Wizard` trait, we need to use **more explicit syntax** to specify which `fly` method we mean.
+
+```rs
+fn main() {
+    let person = Human;
+    Pilot::fly(&person);
+    Wizard::fly(&person);
+    person.fly();
+}
+```
+
+Specifying the **trait name** before the method name clarifies to Rust which implementation of `fly` we want to call. 
+
+We could also write `Human::fly(&person)`, which is equivalent to the `person.fly()`.
+
+As a result the code now prints:
+
+```sh
+$ cargo run
+   Compiling traits-example v0.1.0 (file:///projects/traits-example)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running `target/debug/traits-example`
+This is your captain speaking.
+Up!
+*waving arms furiously*
+```
+
+Because the `fly` method takes a `self` parameter, if we had two types that both implement one trait, Rust could figure out which implementation of a trait to use based on the type of `self`.
+
+However, **associated functions** that are not methods don’t have a `self` parameter. 
+
+When there are *multiple* types or traits that define *non-method functions* with the same function name, Rust doesn’t always know which type you mean unless you use fully qualified syntax.
+
+For example, lets create a trait for an animal shelter that wants to name all baby dogs `Spot`.
+
+We make an `Animal` trait with an *associated non-method* function `baby_name`.
+
+The `Animal` trait is implemented for the struct `Dog`, on which we also provide an *associated non-method* function `baby_name` directly.
+
+```rs
+trait Animal {
+    fn baby_name() -> String;
+}
+
+struct Dog;
+
+impl Dog {
+    fn baby_name() -> String {
+        String::from("Spot")
+    }
+}
+
+impl Animal for Dog {
+    fn baby_name() -> String {
+        String::from("puppy")
+    }
+}
+
+fn main() {
+    println!("A baby dog is called a {}", Dog::baby_name());
+}
+```
+
