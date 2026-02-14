@@ -1,6 +1,6 @@
 {
   /* Change according to cargo directory for linting */
   "rust-analyzer.linkedProjects": [
-    "19_patterns/syntax/Cargo.toml"
+    "20_advanced/traits/Cargo.toml"
   ]
 }
