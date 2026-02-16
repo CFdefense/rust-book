@@ -469,3 +469,49 @@ impl fmt::Display for Point {
 Then, implementing the `OutlinePrint` trait on `Point` will compile successfully, and we can call `outline_print` on a `Point` instance to display it within an outline of asterisks.
 
 ### Implementing External Traits with the Newtype Pattern
+
+In the “Implementing a Trait on a Type” section in Chapter 10, we mentioned the **orphan rule** that states:
+
+We’re *only* allowed to implement a trait on a type if either the trait or the type, or both, are local to our crate.
+
+It’s possible to get around this restriction using the `newtype pattern`, which involves creating a new type in a tuple struct. 
+
+The tuple struct will have *one field* and be a **thin wrapper** around the type for which we want to implement a trait.
+
+Then, the **wrapper type** is local to our crate, and we can implement the trait *on the wrapper*.
+
+*Newtype* is a term that originates from the Haskell programming language.
+
+There is *no runtime performance penalty* for using this pattern, and the wrapper type is elided at compile time.
+
+As an example, let’s say we want to implement `Display` on `Vec<T>`, which the orphan rule **prevents u**s from doing directly because the `Display` trait and the `Vec<T>` type are defined *outside our crate*.
+
+We can make a `Wrapper` struct that holds an instance of `Vec<T>`; then, we can implement `Display` on `Wrapper` and use the `Vec<T>` value:
+
+```rs
+use std::fmt;
+
+struct Wrapper(Vec<String>);
+
+impl fmt::Display for Wrapper {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{}]", self.0.join(", "))
+    }
+}
+
+fn main() {
+    let w = Wrapper(vec![String::from("hello"), String::from("world")]);
+    println!("w = {w}");
+}
+```
+
+The implementation of `Display` uses `self.0` to access the inner `Vec<T>` because `Wrapper` is a tuple struct and `Vec<T>` is the item at index `0` in the tuple. Then, we can use the functionality of the `Display` trait on `Wrapper`.
+
+The downside of using this technique is that `Wrapper` is a new type, so it *doesn’t have the methods of the value it’s holding*.
+
+We would have to implement **all** the methods of `Vec<T>` directly on `Wrapper` such that the methods delegate to `self.0`, which would allow us to treat `Wrapper` exactly like a `Vec<T>`.
+
+If we wanted the new type to have every method the inner type has, implementing the `Deref` trait on the `Wrapper` to return the inner type would be a great solution.
+
+If we didn’t want the `Wrapper` type to have **all** the methods of the inner type—for example, to restrict the `Wrapper` type’s behavior—we would have to implement *just the methods we do want* manually.
+
