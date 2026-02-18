@@ -145,3 +145,126 @@ The type alias helps in two ways: It makes code easier to write and it gives us 
 Because it’s an _alias_, it’s just another `Result<T, E>`, which means we can use any methods that work on `Result<T, E>` with it, as well as special syntax like the `?` operator.
 
 #### The Never Type That Never Returns
+
+Rust has a special type named `!` that’s known in type theory lingo as the **empty type** because it has no values.
+
+We prefer to call it the **never type** because it stands in the place of the return type when a function will **never** return.
+
+```rs
+fn bar() -> ! {
+    // --snip--
+}
+```
+
+This code is read as *“the function bar returns never.”*
+
+Functions that return never are called **diverging functions**.
+
+We **can’t create values** of the type `!`, so `bar` can never possibly return.
+
+But what use is a type you can never create values for?
+
+Let's recall the code for part of our previous number guessing game:
+
+```rs
+    let guess: u32 = match guess.trim().parse() {
+        Ok(num) => num,
+        Err(_) => continue,
+    };
+```
+
+We had additionally discussed how match types must return the same type, as such the following will not compile:
+
+```rs
+    let guess = match guess.trim().parse() {
+        Ok(_) => 5,
+        Err(_) => "hello",
+    };
+```
+
+The type of `guess` in this code would have to be an integer and a string, and Rust requires that guess have only one type.
+
+So, what does `continue` return?
+
+How were we allowed to return a `u32` from one arm and have another arm that ends with `continue`?
+
+As you might have guessed, `continue` has a `!` value.
+
+That is, when Rust computes the type of `guess`, it looks at **both** match arms, the former with a value of `u32` and the latter with a `!` value.
+
+Because `!` can never have a value, Rust decides that the type of `guess` is `u32`.
+
+The formal way of describing this behavior is that expressions of type `!` can be **coerced** into any other type.
+
+We’re *allowed* to end this match arm with `continue` because `continue` doesn’t return a value.
+
+Tnstead, `continue` moves control back to the top of the loop, so in the `Err` case, we **never** assign a value to `guess`.
+
+The **never** type is useful with the `panic!` macro as well.
+
+Recall the `unwrap` function that we call on `Option<T>` values to produce a value or panic with this definition:
+
+```rs
+impl<T> Option<T> {
+    pub fn unwrap(self) -> T {
+        match self {
+            Some(val) => val,
+            None => panic!("called `Option::unwrap()` on a `None` value"),
+        }
+    }
+}
+```
+
+In this code, the same thing happens as above:
+
+Rust sees that `val` has the type `T` and `panic!` has the type `!`, so the result of the overall match expression is `T`.
+
+This code works because `panic!` doesn’t produce a value; it ends the program.
+
+In the `None` case, we won’t be returning a value from `unwrap`, so this code is valid.
+
+One final expression that has the type `!` is a loop:
+
+```rs
+    print!("forever ");
+
+    loop {
+        print!("and ever ");
+    }
+```
+
+Here, the loop never ends, so `!` is the value of the expression.
+
+However, this *wouldn’t be true* if we included a `break`, because the `loop` would terminate when it got to the `break`.
+
+#### Dynamically Sized Types and the Sized Trait
+
+Rust needs to know certain details about its types, such as *how much space* to allocate for a value of a particular type.
+
+This leaves one corner of its type system a little confusing at first: the concept of **dynamically sized types**.
+
+Sometimes referred to as `DSTs` or `unsized types`, these types let us write code using values whose size we can know only at **runtime**.
+
+Let’s dig into the details of a very familiar **dynamically sized type** called `str`.
+
+That’s right, not `&str`, but `str` on its own, is a **DST**.
+
+In many cases, such as when storing text entered by a user, we **can’t know** how long the string is until **runtime**.
+
+That means we can’t create a variable of type `str`, nor can we take an argument of type `str`. 
+
+Consider the following code, which **does not work**:
+
+```rs
+    let s1: str = "Hello there!";
+    let s2: str = "How's it going?";
+```
+
+Rust needs to know how much memory to allocate for any value of a particular type, and **all values of a type must use the same amount of memory**.
+
+**If** Rust allowed us to write this code, these two `str` values would need to take up the same amount of space. 
+
+But they have different lengths: `s1` needs **12** bytes of storage and `s2` needs **15**.
+
+This is why it’s **not possible** to create a variable holding a **dynamically sized type**.
+
