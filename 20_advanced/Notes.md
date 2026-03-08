@@ -2,7 +2,11 @@
 
 These notes have been distributed to:
 
-- `
+- `unsafe/Notes.md`
+- `traits/Notes.md`
+- `types/Notes.md`
+- `funcs_closures/Notes.md`
+- `macros/Notes.md`
 
 Use this file as a quick index to the subchapter notes.
 
