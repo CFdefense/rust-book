@@ -1,4 +1,4 @@
-## Chapter 20 - Final Project: Building a Multithreaded Web Server: Building a Single-Threaded Web Server
+## Chapter 20 - Building a Multithreaded Web Server: Building a Single-Threaded Web Server
 
 ### Summary
 
