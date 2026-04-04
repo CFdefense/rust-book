@@ -157,3 +157,331 @@ This code won’t yet compile, but we’ll try so that the compiler can guide us
 
 ### Building ThreadPool Using Compiler-Driven Development
 
+Here is the first error we get:
+
+```sh
+$ cargo check
+    Checking hello v0.1.0 (file:///projects/hello)
+error[E0433]: failed to resolve: use of undeclared type `ThreadPool`
+  --> src/main.rs:11:16
+   |
+11 |     let pool = ThreadPool::new(4);
+   |                ^^^^^^^^^^ use of undeclared type `ThreadPool`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `hello` (bin "hello") due to 1 previous error
+```
+
+Great! This error tells us we need a `ThreadPool` type or module, so we’ll build one now. 
+
+Our `ThreadPool` implementation will be independent of the kind of work our web server is doing. 
+
+Let's create a `src/lib.rs` file that contains the following, which is the simplest definition of a `ThreadPool` struct that we can have for now:
+
+```rs
+pub struct ThreadPool;
+```
+
+Then, edit the `main.rs` file to bring `ThreadPool` into scope from the library crate by adding the following code to the top of `src/main.rs`:
+
+```rs
+use multi_thread::ThreadPool;
+```
+
+This code still won’t work, but let’s check it again to get the next error that we need to address:
+
+```sh
+$ cargo check
+    Checking hello v0.1.0 (file:///projects/hello)
+error[E0599]: no function or associated item named `new` found for struct `ThreadPool` in the current scope
+  --> src/main.rs:12:28
+   |
+12 |     let pool = ThreadPool::new(4);
+   |                            ^^^ function or associated item not found in `ThreadPool`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `hello` (bin "hello") due to 1 previous error
+```
+
+This error indicates that next we need to create an `associated function` named `new` for `ThreadPool`.
+
+We also know that new needs to have *one* parameter that can accept **4** as an argument and should return a `ThreadPool` instance.
+
+Let’s implement the simplest `new` function that will have those characteristics:
+
+```rs
+pub struct ThreadPool;
+
+impl ThreadPool {
+    pub fn new(size: usize) -> ThreadPool {
+        ThreadPool
+    }
+}
+```
+
+We chose `usize` as the type of the `size` parameter because we know that a *negative number of threads* doesn’t make any sense.
+
+Let’s check the code again:
+
+```sh
+$ cargo check
+    Checking hello v0.1.0 (file:///projects/hello)
+error[E0599]: no method named `execute` found for struct `ThreadPool` in the current scope
+  --> src/main.rs:17:14
+   |
+17 |         pool.execute(|| {
+   |         -----^^^^^^^ method not found in `ThreadPool`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `hello` (bin "hello") due to 1 previous error
+```
+
+Now the error occurs because we don’t have an `execute` method on `ThreadPool`.
+
+Recall that we decided our thread pool should have an interface similar to `thread::spawn`.
+
+In addition, we’ll implement the `execute` function so that it takes the `closure` it’s given and gives it to an idle thread in the `pool` to run.
+
+We’ll define the `execute` method on `ThreadPool` to take a `closure` as a parameter.
+
+Recall that we can take *closures as parameters* with three different traits: `Fn`, `FnMut`, and `FnOnce`.
+
+We need to decide which kind of closure to use here.
+
+We know we’ll end up doing something similar to the standard library `thread::spawn` implementation, so we can look at what bounds the signature of `thread::spawn` has on its parameter. 
+
+The documentation shows us the following:
+
+```rs
+pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+    where
+        F: FnOnce() -> T,
+        F: Send + 'static,
+        T: Send + 'static,
+```
+
+The `F` type parameter is the one we’re concerned with here; the `T` type parameter is related to the return value, and we’re not concerned with that.
+
+We can see that spawn uses `FnOnce` as the trait bound on `F`.
+
+This is probably what we want as well, because we’ll eventually pass the argument we get in `execute` to `spawn`. 
+
+We can be further confident that `FnOnce` is the trait we want to use because the thread for running a request will only execute that request’s closure one time, which matches the `Once` in `FnOnce`.
+
+The `F` type parameter also has the trait bound `Send` and the lifetime bound `'static`, which are useful in our situation: 
+
+We need `Send` to transfer the closure from *one thread to another* and `'static` because we *don’t know how long* the thread will take to execute.
+
+Let’s create an `execute` method on `ThreadPool` that will take a generic parameter of type `F` with these bounds:
+
+```rs
+impl ThreadPool {
+    // --snip--
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+    }
+}
+
+```
+
+We still use the `()` after `FnOnce` because this `FnOnce` represents a closure that takes no parameters and returns the unit type `()`.
+
+Just like function definitions, the return type can be omitted from the signature, but even if we have no parameters, we still need the parentheses.
+
+Again, this is the simplest implementation of the execute method: It does nothing, but we’re only trying to make our code compile. 
+
+Let’s check it again:
+
+```sh
+$ cargo check
+    Checking hello v0.1.0 (file:///projects/hello)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
+```
+
+It compiles! But note that our library isn’t actually calling the closure passed to execute yet!
+
+### Validating the Number of Threads in new
+
+We aren’t doing anything with the parameters to `new` and `execute`.
+
+Let’s implement the bodies of these functions with the behavior we want. To start, let’s think about `new`.
+
+Earlier we chose an unsigned type for the `size` parameter because a pool with a *negative number* of threads makes no sense.
+
+However, a pool with **zero threads** also makes no sense, yet zero is a perfectly valid `usize`.
+
+We’ll add code to check that size is **greater than zero** before we return a `ThreadPool` instance, and we’ll have the program `panic` if it receives a zero by using the `assert!` macro:
+
+```rs
+impl ThreadPool {
+    /// Create a new ThreadPool.
+    ///
+    /// The size is the number of threads in the pool.
+    ///
+    /// # Panics
+    ///
+    /// The `new` function will panic if the size is zero.
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        ThreadPool
+    }
+
+    // --snip--
+}
+```
+
+We’ve also added some documentation for our `ThreadPool` with doc comments. 
+
+Note that we followed good documentation practices by adding a section that calls out the situations in which our function can `panic`.
+
+Instead of adding the `assert!` macro as we’ve done here, we could change `new` into `build` and return a `Result` like we did with `Config::build` in the I/O project.
+
+But we’ve decided in this case that trying to create a thread pool without any threads should be an **unrecoverable error**.
+
+### Creating Space to Store the Threads
+
+Now that we have a way to know we have a valid number of threads to store in the pool, we can create those threads and store them in the `ThreadPool` struct before returning the struct.
+
+But how do we *“store”* a thread? Let’s take another look at the `thread::spawn` signature:
+
+```rs
+pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+    where
+        F: FnOnce() -> T,
+        F: Send + 'static,
+        T: Send + 'static,
+```
+
+The `spawn` function returns a `JoinHandle<T>`, where `T` is the type that the `closure` returns. 
+
+Let’s try using `JoinHandle` too and see what happens.
+
+In our case, the `closures` we’re passing to the thread pool will handle the connection and *not return anything*, so `T` will be the unit type `()`.
+
+```rs
+use std::thread;
+
+pub struct ThreadPool {
+    threads: Vec<thread::JoinHandle<()>>,
+}
+
+impl ThreadPool {
+    // --snip--
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let mut threads = Vec::with_capacity(size);
+
+        for _ in 0..size {
+            // create some threads and store them in the vector
+        }
+
+        ThreadPool { threads }
+    }
+    // --snip--
+}
+```
+
+This code will compile, but it *doesn’t create any threads yet*.
+
+We’ve changed the definition of `ThreadPool` to hold a vector of `thread::JoinHandle<()>` instances, initialized the vector with a capacity of size, set up a `for` loop that will run some code to create the threads, and returned a `ThreadPool` instance containing them.
+
+We’ve brought `std::thread` into scope in the library crate because we’re using `thread::JoinHandle` as the type of the items in the vector in `ThreadPool`.
+
+Once a valid size is received, our `ThreadPool` creates a new vector that can hold size items.
+
+The `with_capacity` function performs the same task as `Vec::new` but with an important difference: It pre-allocates space in the vector. 
+
+Because we know we need to store `size` elements in the vector, doing this allocation up front is slightly more efficient than using `Vec::new`, which resizes itself as elements are inserted.
+
+### Sending Code from the ThreadPool to a Thread
+
+Here, we’ll look at how we actually create threads. 
+
+The standard library provides `thread::spawn` as a way to create threads, and `thread::spawn` expects to get some code the thread should run as soon as the thread is created. 
+
+However, in our case, we want to create the threads and have them wait for code that we’ll send later. 
+
+The standard library’s implementation of threads doesn’t include any way to do that; **we have to implement it manually**.
+
+We’ll implement this behavior by introducing a new data structure between the `ThreadPool` and the threads that will manage this new behavior.
+
+We’ll call this data structure `Worker`, which is a common term in pooling implementations. 
+
+The `Worker` picks up code that needs to be run and runs the code in its thread.
+
+Think of people working in the kitchen at a restaurant: The workers wait until orders come in from customers, and then they’re responsible for taking those orders and filling them.
+
+Instead of storing a vector of `JoinHandle<()>` instances in the thread pool, we’ll store instances of the `Worker` struct.
+
+Each `Worker` will store a single `JoinHandle<()>` instance.
+
+Then, we’ll implement a method on `Worker` that will take a `closure` of code to run and send it to the already running thread for execution. 
+
+We’ll also give each `Worker` an `id` so that we can distinguish between the different instances of `Worker` in the `pool` when logging or debugging.
+
+Here is the new process that will happen when we create a `ThreadPool`.
+
+We’ll implement the code that sends the `closure` to the `thread` after we have `Worker` set up in this way:
+
+1. Define a `Worker` struct that holds an `id` and a `JoinHandle<()>`.
+2. Change `ThreadPool` to hold a vector of `Worker` instances.
+3. Define a `Worker::new` function that takes an `id` number and returns a `Worker` instance that holds the `id` and a thread spawned with an empty closure.
+4. In `ThreadPool::new`, use the `for` loop counter to generate an `id`, create a new `Worker` with that `id`, and store the `Worker` in the vector.
+
+Lets begin:
+
+```rs
+use std::thread;
+
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+}
+
+impl ThreadPool {
+    // --snip--
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id));
+        }
+
+        ThreadPool { workers }
+    }
+    // --snip--
+}
+
+struct Worker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize) -> Worker {
+        let thread = thread::spawn(|| {});
+
+        Worker { id, thread }
+    }
+}
+```
+
+We’ve changed the name of the field on `ThreadPool` from threads to workers because it’s now holding `Worker` instances instead of `JoinHandle<()>` instances.
+
+We use the counter in the for loop as an argument to `Worker::new`, and we store each new `Worker` in the vector named `workers`.
+
+External code (like our server in src/main.rs) doesn’t need to know the implementation details regarding using a `Worker` struct within `ThreadPool`, so we make the `Worker` struct and its new function private.
+
+The `Worker::new` function uses the `id` we give it and stores a `JoinHandle<()>` instance that is created by spawning a new thread using an empty closure.
+
+This code will compile and will store the number of `Worker` instances we specified as an argument to `ThreadPool::new`.
+
+But we’re still not processing the `closure` that we get in execute. Let’s look at how to do that next.
+
+### Sending Requests to Threads via Channels
+
