@@ -26,6 +26,7 @@ To run an example:
 cd chapter01_hello_cargo
 cargo run
 ```
+
 ## Important Tip
 
 If you're using Rust Analyzer in VS Code and want it to properly understand and lint examples within subdirectories (such as a chapter's Cargo project), you'll need to manually specify the current project in your workspace settings.

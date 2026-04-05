@@ -485,3 +485,341 @@ But we’re still not processing the `closure` that we get in execute. Let’s l
 
 ### Sending Requests to Threads via Channels
 
+The next problem we’ll tackle is that the closures given to `thread::spawn` do absolutely nothing.
+
+Currently, we get the closure we want to execute in the `execute` method. 
+
+But we need to give `thread::spawn` a closure to run when we create each `Worker` during the creation of the `ThreadPool`.
+
+We want the `Worker` structs that we just created to **fetch** the code to run from a queue held in the `ThreadPool` and send that code to its thread to run.
+
+Channels are a simple way to communicate between two threads—would be perfect for this use case.
+
+We’ll use a `channel` to function as the queue of jobs, and `execute` will send a job from the `ThreadPool` to the `Worker` instances, which will send the job to its thread. 
+
+Here is the plan:
+
+1. The `ThreadPool` will create a `channel` and hold on to the sender.
+2. Each `Worker` will hold on to the `receiver`.
+3. We’ll create a new `Job` struct that will hold the closures we want to send down the channel.
+4. The `execute` method will send the job it wants to execute through the sender.
+5. In its thread, the `Worker` will loop over its `receiver` and execute the closures of any jobs it receives.
+
+Let’s start by creating a channel in `ThreadPool::new` and holding the sender in the `ThreadPool` instance.
+
+The `Job` struct doesn’t hold anything for now but will be the type of item we’re sending down the channel.
+
+```rs
+use std::{sync::mpsc, thread};
+
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>,
+}
+
+struct Job;
+
+impl ThreadPool {
+    // --snip--
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel();
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id));
+        }
+
+        ThreadPool { workers, sender }
+    }
+    // --snip--
+}
+```
+
+In `ThreadPool::new`, we create our new `channel` and have the pool hold the sender. This will successfully compile.
+
+Let’s try passing a `receiver` of the channel into each `Worker` as the thread pool creates the channel.
+
+We know we want to use the `receiver` in the thread that the `Worker` instances spawn, so we’ll reference the `receiver` parameter in the closure.
+
+This wont compile yet though:
+
+```rs
+impl ThreadPool {
+    // --snip--
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel();
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id, receiver));
+        }
+
+        ThreadPool { workers, sender }
+    }
+    // --snip--
+}
+
+// --snip--
+
+impl Worker {
+    fn new(id: usize, receiver: mpsc::Receiver<Job>) -> Worker {
+        let thread = thread::spawn(|| {
+            receiver;
+        });
+
+        Worker { id, thread }
+    }
+}
+```
+
+We’ve made some small and straightforward changes: We pass the `receiver` into `Worker::new`, and then we use it inside the closure.
+
+When we try to check this code, we get this error:
+
+```sh
+$ cargo check
+    Checking hello v0.1.0 (file:///projects/hello)
+error[E0382]: use of moved value: `receiver`
+  --> src/lib.rs:26:42
+   |
+21 |         let (sender, receiver) = mpsc::channel();
+   |                      -------- move occurs because `receiver` has type `std::sync::mpsc::Receiver<Job>`, which does not implement the `Copy` trait
+...
+25 |         for id in 0..size {
+   |         ----------------- inside of this loop
+26 |             workers.push(Worker::new(id, receiver));
+   |                                          ^^^^^^^^ value moved here, in previous iteration of loop
+   |
+note: consider changing this parameter type in method `new` to borrow instead if owning the value isn't necessary
+  --> src/lib.rs:47:33
+   |
+47 |     fn new(id: usize, receiver: mpsc::Receiver<Job>) -> Worker {
+   |        --- in this method       ^^^^^^^^^^^^^^^^^^^ this parameter takes ownership of the value
+help: consider moving the expression out of the loop so it is only moved once
+   |
+25 ~         let mut value = Worker::new(id, receiver);
+26 ~         for id in 0..size {
+27 ~             workers.push(value);
+   |
+
+For more information about this error, try `rustc --explain E0382`.
+error: could not compile `hello` (lib) due to 1 previous error
+```
+
+The code is trying to pass `receiver` to multiple `Worker` instances. This won’t work, as you’ll recall from Chapter 16: The `channel` implementation that Rust provides is *multiple producer, single consumer*.
+
+This means we can’t just `clone` the consuming end of the channel to fix this code.
+
+We also don’t want to send a message multiple times to multiple consumers; we want one list of messages with multiple `Worker` instances such that each message gets processed once.
+
+Additionally, taking a job off the channel queue involves mutating the `receiver`, so the threads need a safe way to share and modify `receiver`; otherwise, we might get race conditions.
+
+Recall the `thread-safe smart pointers` discussed in Chapter 16: To share ownership across multiple threads and allow the threads to mutate the value, we need to use `Arc<Mutex<T>>`.
+
+The `Arc` type will let multiple `Worker` instances own the receiver, and `Mutex` will ensure that only one `Worker` gets a job from the receiver at a time.
+
+Lets make this change:
+
+```rs
+use std::{
+    sync::{Arc, Mutex, mpsc},
+    thread,
+};
+// --snip--
+
+impl ThreadPool {
+    // --snip--
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel();
+
+        let receiver = Arc::new(Mutex::new(receiver));
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
+        }
+
+        ThreadPool { workers, sender }
+    }
+
+    // --snip--
+}
+
+// --snip--
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        // --snip--
+    }
+}
+```
+
+In `ThreadPool::new`, we put the `receiver` in an `Arc` and a `Mutex`. 
+
+For each new `Worker`, we `clone` the `Arc` to bump the reference count so that the `Worker` instances can share ownership of the receiver.
+
+With these changes, the code compiles! We’re getting there!
+
+### Implementing the execute Method
+
+Let’s finally implement the `execute` method on `ThreadPool`. We’ll also change `Job` from a struct to a `type alias` for a trait object that holds the type of closure that execute receives.
+
+`Type aliases` allow us to make long types shorter for ease of use. 
+
+```rs
+// --snip--
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+impl ThreadPool {
+    // --snip--
+
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let job = Box::new(f);
+
+        self.sender.send(job).unwrap();
+    }
+}
+
+// --snip--
+```
+
+After creating a new `Job` instance using the closure we get in `execute`, we send that job down the sending end of the channel.
+
+We’re calling `unwrap` on `send` for the case that sending fails. This might happen if, for example, we stop all our threads from executing, meaning the receiving end has stopped receiving new messages.
+
+At the moment, we can’t stop our threads from executing: Our threads continue executing as long as the pool exists.
+
+The reason we use `unwrap` is that we know the failure case won’t happen, but the compiler doesn’t know that.
+
+But we’re not quite done yet! In the `Worker`, our closure being passed to `thread::spawn` still only references the receiving end of the channel.
+
+Instead, we need the closure to loop forever, asking the receiving end of the channel for a job and running the job when it gets one.
+
+Let’s make the this change to `Worker::new`:
+
+```rs
+// --snip--
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || {
+            loop {
+                let job = receiver.lock().unwrap().recv().unwrap();
+
+                println!("Worker {id} got a job; executing.");
+
+                job();
+            }
+        });
+
+        Worker { id, thread }
+    }
+}
+```
+
+Here, we first call `lock` on the `receiver` to acquire the mutex, and then we call `unwrap` to panic on any errors.
+
+Acquiring a lock might fail if the mutex is in a **poisoned state**, which can happen if some other thread panicked while holding the lock rather than releasing the lock.
+
+In this situation, calling `unwrap` to have this thread panic is the correct action to take. 
+
+If we get the lock on the mutex, we call `recv` to receive a `Job` from the channel.
+
+A final `unwrap` moves past any errors here as well, which might occur if the thread holding the sender has shut down, similar to how the `send` method returns `Err` if the `receiver` shuts down.
+
+The call to `recv` blocks, so if there is no job yet, the current thread will wait until a job becomes available. The `Mutex<T>` ensures that only one `Worker` thread at a time is trying to request a job.
+
+Our thread pool is now in a working state! 
+
+Lets run it:
+
+```sh
+$ cargo run
+   Compiling hello v0.1.0 (file:///projects/hello)
+warning: field `workers` is never read
+ --> src/lib.rs:7:5
+  |
+6 | pub struct ThreadPool {
+  |            ---------- field in this struct
+7 |     workers: Vec<Worker>,
+  |     ^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` on by default
+
+warning: fields `id` and `thread` are never read
+  --> src/lib.rs:48:5
+   |
+47 | struct Worker {
+   |        ------ fields in this struct
+48 |     id: usize,
+   |     ^^
+49 |     thread: thread::JoinHandle<()>,
+   |     ^^^^^^
+
+warning: `hello` (lib) generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.91s
+     Running `target/debug/hello`
+Worker 0 got a job; executing.
+Worker 2 got a job; executing.
+Worker 1 got a job; executing.
+Worker 3 got a job; executing.
+Worker 0 got a job; executing.
+Worker 2 got a job; executing.
+Worker 1 got a job; executing.
+Worker 3 got a job; executing.
+Worker 0 got a job; executing.
+Worker 2 got a job; executing.
+```
+
+Success! We now have a thread pool that executes connections **asynchronously**.
+
+There are never more than four threads created, so our system won’t get overloaded if the server receives a lot of requests. 
+
+If we make a request to `/sleep`, the server will be able to serve other requests by having another thread run them.
+
+After learning about the `while let` loop in Chapter 17 and Chapter 19, you might be wondering why we didn’t write the `Worker` thread like this:
+
+```rs
+// --snip--
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || {
+            while let Ok(job) = receiver.lock().unwrap().recv() {
+                println!("Worker {id} got a job; executing.");
+
+                job();
+            }
+        });
+
+        Worker { id, thread }
+    }
+}
+```
+
+This code compiles and runs but *doesn’t result in the desired threading behavior*: A slow request *will still cause other requests to wait* to be processed. 
+
+The reason is somewhat subtle: The `Mutex` struct has no public `unlock` method because the ownership of the lock is based on the lifetime of the `MutexGuard<T>` within the `LockResult<MutexGuard<T>>` that the `lock` method returns.
+ 
+At compile time, the borrow checker can then enforce the rule that a resource guarded by a `Mutex` cannot be accessed unless we hold the lock. 
+
+However, this implementation can also result in the lock being held longer than intended if we aren’t mindful of the lifetime of the `MutexGuard<T>`.
+
+The code that uses `let job = receiver.lock().unwrap().recv().unwrap()`; works because with `let`, any temporary values used in the expression on the right-hand side of the equal sign are **immediately dropped** when the `let` statement ends.
+
+However, `while let` (and `if let` and `match`) does not drop temporary values until the *end* of the associated block. 
+
+So, the lock remains held for the duration of the call to `job()`, meaning other `Worker` instances cannot receive jobs.

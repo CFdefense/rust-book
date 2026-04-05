@@ -1,6 +1,6 @@
 {
   /* Change according to cargo directory for linting */
   "rust-analyzer.linkedProjects": [
-    "21_webserver/multi_thread/Cargo.toml"
+    "21_webserver/graceful_shutdown/Cargo.toml"
   ]
 }
